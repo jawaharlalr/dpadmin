@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { db, storage } from '../firebase';
-import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, collection, getDocs } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { toast } from 'react-hot-toast';
-import { Save, Loader2, Trash2 } from 'lucide-react';
+import { Save, Loader2, LayoutDashboard } from 'lucide-react'; // Cleaned line
 
 import BannerManager from '../components/home-editor/BannerManager';
 import OfferManager from '../components/home-editor/OfferManager';
 import BestSellerManager from '../components/home-editor/BestSellerManager';
 import LayoutManager from '../components/home-editor/LayoutManager';
+import NoteManager from '../components/home-editor/NoteManager';
 
 export default function HomeEditor() {
   const [loading, setLoading] = useState(true);
@@ -26,33 +27,41 @@ export default function HomeEditor() {
     bestSellers: []
   });
 
+  // --- REAL-TIME DATA FETCHING ---
   useEffect(() => {
     const fetchData = async () => {
       try {
+        // Fetch categories and products for managers
         const catSnap = await getDocs(collection(db, "categories"));
         const cats = catSnap.docs.map(doc => doc.data().name);
         
         const prodSnap = await getDocs(collection(db, "products"));
         setAllProducts(prodSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
-        const docSnap = await getDoc(doc(db, "app_settings", "home_screen"));
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setSettings({ 
-            ...data, 
-            categoryOrder: data.categoryOrder || cats,
-            importantNotes: data.importantNotes || [],
-            banners: data.banners || [],
-            offers: data.offers || [],
-            bestSellers: data.bestSellers || []
-          });
-        } else {
-          setSettings(prev => ({ ...prev, categoryOrder: cats }));
-        }
+        // Setup real-time listener for home screen settings
+        const unsub = onSnapshot(doc(db, "app_settings", "home_screen"), (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            setSettings({ 
+              ...data, 
+              categoryOrder: data.categoryOrder || cats,
+              importantNotes: data.importantNotes || [],
+              banners: data.banners || [],
+              offers: data.offers || [],
+              bestSellers: data.bestSellers || []
+            });
+          } else {
+            setSettings(prev => ({ ...prev, categoryOrder: cats }));
+          }
+          setLoading(false);
+        });
+
+        return () => unsub();
       } catch (e) {
-        toast.error("Failed to load data");
+        console.error("Data Fetch Error:", e);
+        toast.error("Failed to load dashboard data");
+        setLoading(false);
       }
-      setLoading(false);
     };
     fetchData();
   }, []);
@@ -61,9 +70,9 @@ export default function HomeEditor() {
     setSaving(true);
     try {
       await setDoc(doc(db, "app_settings", "home_screen"), settings);
-      toast.success("Home screen updated!");
+      toast.success("Mobile App Configurations Published!");
     } catch (e) { 
-      toast.error("Save failed"); 
+      toast.error("Cloud Sync Failed"); 
     }
     setSaving(false);
   };
@@ -72,7 +81,7 @@ export default function HomeEditor() {
   const handleBannerUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const tid = toast.loading("Uploading image...");
+    const tid = toast.loading("Processing high-res banner...");
     try {
       const sRef = ref(storage, `banners/${Date.now()}`);
       await uploadBytes(sRef, file);
@@ -82,12 +91,11 @@ export default function HomeEditor() {
         banners: [...settings.banners, { 
           id: Date.now(), 
           imageUrl: url,
-          title: '',
-          description: '',
-          buttonText: 'Order Now' 
+          order: settings.banners.length + 1,
+          duration: 5 
         }] 
       });
-      toast.success("Image uploaded", { id: tid });
+      toast.success("Banner added!", { id: tid });
     } catch (err) {
       toast.error("Upload failed", { id: tid });
     }
@@ -108,39 +116,61 @@ export default function HomeEditor() {
     });
   };
 
-  if (loading) return <div className="flex justify-center pt-20"><Loader2 className="animate-spin text-brand-red" size={40} /></div>;
+  // --- Note (Announcement) Handlers ---
+  const updateNote = (id, field, val) => {
+    setSettings({
+      ...settings,
+      importantNotes: settings.importantNotes.map(n => n.id === id ? { ...n, [field]: val } : n)
+    });
+  };
+
+  if (loading) return (
+    <div className="flex flex-col items-center justify-center pt-32">
+      <Loader2 className="mb-4 animate-spin text-brand-red" size={40} />
+      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 italic">Initializing App Config...</p>
+    </div>
+  );
 
   return (
     <div className="pb-20">
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col justify-between gap-6 mb-10 md:flex-row md:items-center">
         <div>
-          <h2 className="text-2xl font-bold text-gray-800">Home Editor</h2>
-          <p className="text-sm text-gray-500">Manage banners, offers, and layout for the customer app.</p>
+          <h2 className="flex items-center gap-3 text-3xl italic font-black tracking-tighter text-gray-800 uppercase">
+            <LayoutDashboard className="text-brand-orange" size={28} />
+            Home <span className="text-brand-orange">Editor</span>
+          </h2>
+          <p className="text-sm font-medium text-gray-500">Manage promotional content and app layout logic.</p>
         </div>
         <button 
           onClick={handleSave} 
           disabled={saving}
-          className="flex items-center gap-2 px-6 py-2 text-white transition-all shadow-lg bg-brand-red rounded-xl hover:bg-brand-dark disabled:opacity-50"
+          className="flex items-center justify-center gap-2 px-8 py-3 text-xs font-black tracking-widest text-white uppercase transition-all shadow-xl bg-gradient-to-r from-brand-red to-brand-orange rounded-2xl hover:brightness-110 active:scale-95 disabled:opacity-50"
         >
           {saving ? <Loader2 className="animate-spin" size={18}/> : <Save size={18} />} 
-          {saving ? "Saving..." : "Save Changes"}
+          {saving ? "Publishing..." : "Publish Changes"}
         </button>
       </div>
 
       {/* Tabs Navigation */}
-      <div className="flex gap-2 p-1.5 mb-8 bg-gray-100 rounded-2xl w-fit overflow-x-auto max-w-full">
-        {['banners', 'offers', 'sellers', 'notes', 'alignment'].map(id => (
+      <div className="flex gap-2 p-2 mb-8 bg-white border border-gray-100 rounded-[2rem] w-fit shadow-sm overflow-x-auto max-w-full">
+        {[
+          { id: 'banners', label: 'Banners' },
+          { id: 'offers', label: 'Discounts' },
+          { id: 'sellers', label: 'Best Sellers' },
+          { id: 'notes', label: 'Announcements' },
+          { id: 'alignment', label: 'Layout' }
+        ].map(tab => (
           <button 
-            key={id} 
-            onClick={() => setActiveTab(id)} 
-            className={`px-5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${activeTab === id ? 'bg-white text-brand-red shadow' : 'text-gray-500 hover:text-gray-700'}`}
+            key={tab.id} 
+            onClick={() => setActiveTab(tab.id)} 
+            className={`px-6 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-brand-red text-white shadow-lg shadow-red-100' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-50'}`}
           >
-            {id.toUpperCase().replace('_', ' ')}
+            {tab.label}
           </button>
         ))}
       </div>
 
-      <div className="p-6 bg-white border shadow-sm rounded-3xl">
+      <div className="p-8 bg-white border border-gray-50 shadow-2xl rounded-[3rem]">
         {/* Banner Section */}
         {activeTab === 'banners' && (
           <BannerManager 
@@ -155,7 +185,7 @@ export default function HomeEditor() {
         {activeTab === 'offers' && (
           <OfferManager 
             offers={settings.offers} 
-            onAdd={() => setSettings({...settings, offers: [...settings.offers, {id: Date.now(), title:'', discount:''}]})} 
+            onAdd={() => setSettings({...settings, offers: [...settings.offers, {id: Date.now(), title:'', discount:'', minAmount: 0}]})} 
             onUpdate={updateOffer} 
             onRemove={id => setSettings({...settings, offers: settings.offers.filter(o => o.id !== id)})} 
           />
@@ -172,7 +202,7 @@ export default function HomeEditor() {
           />
         )}
 
-        {/* Alignment & Layout Section */}
+        {/* Layout Section */}
         {activeTab === 'alignment' && (
           <LayoutManager 
             order={settings.categoryOrder} 
@@ -187,34 +217,14 @@ export default function HomeEditor() {
           />
         )}
         
-        {/* Notes Section */}
+        {/* New Announcements Section with Reason/Category logic */}
         {activeTab === 'notes' && (
-          <div className="space-y-4">
-            <h3 className="font-bold text-gray-800">Scrolling Announcements</h3>
-            <p className="text-xs italic text-gray-400">These appear as a scrolling ticker at the top of the app.</p>
-            {settings.importantNotes.map(n => (
-              <div key={n.id} className="flex gap-2">
-                <input 
-                  className="flex-1 p-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-brand-orange" 
-                  placeholder="e.g. 🎉 Get 20% off on your first order!"
-                  value={n.text} 
-                  onChange={e => setSettings({...settings, importantNotes: settings.importantNotes.map(x => x.id === n.id ? {...x, text: e.target.value} : x)})} 
-                />
-                <button 
-                  onClick={() => setSettings({...settings, importantNotes: settings.importantNotes.filter(x => x.id !== n.id)})} 
-                  className="p-3 text-red-500 transition-colors hover:bg-red-50 rounded-xl"
-                >
-                  <Trash2 size={20}/>
-                </button>
-              </div>
-            ))}
-            <button 
-              onClick={() => setSettings({...settings, importantNotes: [...settings.importantNotes, {id: Date.now(), text: ''}]})} 
-              className="px-2 mt-2 text-sm font-bold text-brand-orange hover:underline"
-            >
-              + Add New Line
-            </button>
-          </div>
+          <NoteManager 
+            notes={settings.importantNotes}
+            onAdd={() => setSettings({...settings, importantNotes: [...settings.importantNotes, {id: Date.now(), text: '', reason: ''}]})}
+            onUpdate={updateNote}
+            onRemove={id => setSettings({...settings, importantNotes: settings.importantNotes.filter(n => n.id !== id)})}
+          />
         )}
       </div>
     </div>
