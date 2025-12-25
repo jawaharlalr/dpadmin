@@ -9,7 +9,8 @@ import Delivery from './pages/Delivery';
 import Category from './pages/Category';
 import Login from './pages/Login';
 import HomeEditor from './pages/HomeEditor';
-import Customers from './pages/Customers'; // Import the new Customers page
+import Customers from './pages/Customers';
+import MinOrderSettings from './pages/MinOrderSettings'; // Import the new settings page
 
 const PrivateRoute = ({ children }) => {
   const { user } = useAuth();
@@ -41,9 +42,10 @@ function App() {
           <Route path="/categories" element={<PrivateRoute><Category /></PrivateRoute>} />
           <Route path="/menu" element={<PrivateRoute><Menu /></PrivateRoute>} />
           <Route path="/orders" element={<PrivateRoute><Orders /></PrivateRoute>} />
-          
-          {/* New Customers Route */}
           <Route path="/customers" element={<PrivateRoute><Customers /></PrivateRoute>} />
+          
+          {/* New Min Order Settings Route */}
+          <Route path="/settings/min-order" element={<PrivateRoute><MinOrderSettings /></PrivateRoute>} />
           
           <Route path="/delivery" element={<PrivateRoute><Delivery /></PrivateRoute>} />
 
