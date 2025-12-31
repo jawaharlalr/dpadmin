@@ -3,13 +3,13 @@ import { db, storage } from '../firebase';
 import { doc, onSnapshot, setDoc, collection, getDocs } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { toast } from 'react-hot-toast';
-import { Save, Loader2, LayoutDashboard } from 'lucide-react'; // Cleaned line
+import { Save, Loader2, LayoutDashboard } from 'lucide-react';
 
 import BannerManager from '../components/home-editor/BannerManager';
 import OfferManager from '../components/home-editor/OfferManager';
 import BestSellerManager from '../components/home-editor/BestSellerManager';
 import LayoutManager from '../components/home-editor/LayoutManager';
-import NoteManager from '../components/home-editor/NoteManager';
+import PromotionManager from '../components/home-editor/PromotionManager';
 
 export default function HomeEditor() {
   const [loading, setLoading] = useState(true);
@@ -20,8 +20,8 @@ export default function HomeEditor() {
 
   const [settings, setSettings] = useState({
     banners: [],
-    importantNotes: [],
     offers: [], 
+    promotions: [], 
     categoryAlignment: 'grid',
     categoryOrder: [],
     bestSellers: []
@@ -31,23 +31,21 @@ export default function HomeEditor() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch categories and products for managers
         const catSnap = await getDocs(collection(db, "categories"));
         const cats = catSnap.docs.map(doc => doc.data().name);
         
         const prodSnap = await getDocs(collection(db, "products"));
         setAllProducts(prodSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
-        // Setup real-time listener for home screen settings
         const unsub = onSnapshot(doc(db, "app_settings", "home_screen"), (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
             setSettings({ 
               ...data, 
               categoryOrder: data.categoryOrder || cats,
-              importantNotes: data.importantNotes || [],
               banners: data.banners || [],
               offers: data.offers || [],
+              promotions: data.promotions || [],
               bestSellers: data.bestSellers || []
             });
           } else {
@@ -59,7 +57,6 @@ export default function HomeEditor() {
         return () => unsub();
       } catch (e) {
         console.error("Data Fetch Error:", e);
-        toast.error("Failed to load dashboard data");
         setLoading(false);
       }
     };
@@ -77,11 +74,11 @@ export default function HomeEditor() {
     setSaving(false);
   };
 
-  // --- Banner Handlers ---
+  // --- Banner Upload Handlers ---
   const handleBannerUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const tid = toast.loading("Processing high-res banner...");
+    const tid = toast.loading("Processing banner...");
     try {
       const sRef = ref(storage, `banners/${Date.now()}`);
       await uploadBytes(sRef, file);
@@ -101,6 +98,28 @@ export default function HomeEditor() {
     }
   };
 
+  // --- Promotion Image Upload Handler ---
+  const handlePromotionImageUpload = async (id, file) => {
+    if (!file) return;
+    const tid = toast.loading("Uploading promotion banner...");
+    try {
+      const sRef = ref(storage, `promotions/${Date.now()}_${file.name}`);
+      await uploadBytes(sRef, file);
+      const url = await getDownloadURL(sRef);
+      
+      setSettings(prev => ({
+        ...prev,
+        promotions: prev.promotions.map(p => 
+          p.id === id ? { ...p, imageUrl: url } : p
+        )
+      }));
+      
+      toast.success("Banner image updated!", { id: tid });
+    } catch (err) {
+      toast.error("Upload failed", { id: tid });
+    }
+  };
+
   const updateBanner = (id, field, val) => {
     setSettings({
       ...settings,
@@ -108,7 +127,6 @@ export default function HomeEditor() {
     });
   };
 
-  // --- Offer Handlers ---
   const updateOffer = (id, field, val) => {
     setSettings({
       ...settings,
@@ -116,25 +134,24 @@ export default function HomeEditor() {
     });
   };
 
-  // --- Note (Announcement) Handlers ---
-  const updateNote = (id, field, val) => {
+  const updatePromotion = (id, field, val) => {
     setSettings({
       ...settings,
-      importantNotes: settings.importantNotes.map(n => n.id === id ? { ...n, [field]: val } : n)
+      promotions: settings.promotions.map(p => p.id === id ? { ...p, [field]: val } : p)
     });
   };
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center pt-32">
       <Loader2 className="mb-4 animate-spin text-brand-red" size={40} />
-      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 italic">Initializing App Config...</p>
+      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 italic">Initializing...</p>
     </div>
   );
 
   return (
     <div className="pb-20">
       <div className="flex flex-col justify-between gap-6 mb-10 md:flex-row md:items-center">
-        <div>
+        <div className="text-left">
           <h2 className="flex items-center gap-3 text-3xl italic font-black tracking-tighter text-gray-800 uppercase">
             <LayoutDashboard className="text-brand-orange" size={28} />
             Home <span className="text-brand-orange">Editor</span>
@@ -144,10 +161,10 @@ export default function HomeEditor() {
         <button 
           onClick={handleSave} 
           disabled={saving}
-          className="flex items-center justify-center gap-2 px-8 py-3 text-xs font-black tracking-widest text-white uppercase transition-all shadow-xl bg-gradient-to-r from-brand-red to-brand-orange rounded-2xl hover:brightness-110 active:scale-95 disabled:opacity-50"
+          className="flex items-center justify-center gap-2 px-8 py-3 text-xs font-black text-white uppercase shadow-xl bg-gradient-to-r from-brand-red to-brand-orange rounded-2xl active:scale-95 disabled:opacity-50"
         >
           {saving ? <Loader2 className="animate-spin" size={18}/> : <Save size={18} />} 
-          {saving ? "Publishing..." : "Publish Changes"}
+          Publish Changes
         </button>
       </div>
 
@@ -155,9 +172,9 @@ export default function HomeEditor() {
       <div className="flex gap-2 p-2 mb-8 bg-white border border-gray-100 rounded-[2rem] w-fit shadow-sm overflow-x-auto max-w-full">
         {[
           { id: 'banners', label: 'Banners' },
+          { id: 'promos', label: 'Promotions' },
           { id: 'offers', label: 'Discounts' },
           { id: 'sellers', label: 'Best Sellers' },
-          { id: 'notes', label: 'Announcements' },
           { id: 'alignment', label: 'Layout' }
         ].map(tab => (
           <button 
@@ -171,7 +188,6 @@ export default function HomeEditor() {
       </div>
 
       <div className="p-8 bg-white border border-gray-50 shadow-2xl rounded-[3rem]">
-        {/* Banner Section */}
         {activeTab === 'banners' && (
           <BannerManager 
             banners={settings.banners} 
@@ -181,7 +197,29 @@ export default function HomeEditor() {
           />
         )}
 
-        {/* Offers Section */}
+        {activeTab === 'promos' && (
+          <PromotionManager 
+            promotions={settings.promotions}
+            onAdd={() => setSettings({
+              ...settings, 
+              promotions: [...settings.promotions, {
+                id: Date.now(), 
+                text: '', 
+                subText: '', 
+                emoji: '✨', 
+                deadline: '', 
+                imageUrl: ''
+              }]
+            })}
+            onUpdate={updatePromotion}
+            onRemove={id => setSettings({
+              ...settings, 
+              promotions: settings.promotions.filter(p => p.id !== id)
+            })}
+            onImageUpload={handlePromotionImageUpload}
+          />
+        )}
+
         {activeTab === 'offers' && (
           <OfferManager 
             offers={settings.offers} 
@@ -191,7 +229,6 @@ export default function HomeEditor() {
           />
         )}
 
-        {/* Best Sellers Section */}
         {activeTab === 'sellers' && (
           <BestSellerManager 
             products={allProducts} 
@@ -202,7 +239,6 @@ export default function HomeEditor() {
           />
         )}
 
-        {/* Layout Section */}
         {activeTab === 'alignment' && (
           <LayoutManager 
             order={settings.categoryOrder} 
@@ -214,16 +250,6 @@ export default function HomeEditor() {
               n.splice(i+d, 0, x); 
               setSettings({...settings, categoryOrder: n})
             }} 
-          />
-        )}
-        
-        {/* New Announcements Section with Reason/Category logic */}
-        {activeTab === 'notes' && (
-          <NoteManager 
-            notes={settings.importantNotes}
-            onAdd={() => setSettings({...settings, importantNotes: [...settings.importantNotes, {id: Date.now(), text: '', reason: ''}]})}
-            onUpdate={updateNote}
-            onRemove={id => setSettings({...settings, importantNotes: settings.importantNotes.filter(n => n.id !== id)})}
           />
         )}
       </div>
